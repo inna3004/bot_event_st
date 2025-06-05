@@ -78,6 +78,14 @@ def get_cancel_keyboard():
     keyboard.add(types.KeyboardButton("❌ Отменить регистрацию"))
     return keyboard
 
+def get_skip_keyboard():
+    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    keyboard.add(
+        types.KeyboardButton("Пропустить"),
+        types.KeyboardButton("❌ Отменить регистрацию")
+    )
+    return keyboard
+
 
 def save_user_data(user_id: int, **kwargs):
     """Обертка для сохранения данных пользователя"""
@@ -226,7 +234,7 @@ def process_phone_step(message):
 def ask_for_name(message):
     msg = bot.send_message(
         message.chat.id,
-        "Введите ваше имя: (или нажмите 'Отменить регистрацию')",
+        "Введите ваше имя:",
         reply_markup=get_cancel_keyboard()
     )
     user_repository.set_user_step(message.from_user.id, REG_STEPS['name'])
@@ -251,7 +259,7 @@ def process_name_step(message):
 def ask_for_surname(message):
     msg = bot.send_message(
         message.chat.id,
-        "Введите вашу фамилию: (или нажмите 'Отменить регистрацию')",
+        "Введите вашу фамилию:",
         reply_markup=get_cancel_keyboard()
     )
     user_repository.set_user_step(message.from_user.id, REG_STEPS['surname'])
@@ -276,7 +284,7 @@ def process_surname_step(message):
 def ask_for_gender(message):
     msg = bot.send_message(
         message.chat.id,
-        "Укажите ваш пол: (или нажмите 'Отменить регистрацию')",
+        "Укажите ваш пол: ",
         reply_markup=get_gender_keyboard()
     )
     user_repository.set_user_step(message.from_user.id, REG_STEPS['gender'])
@@ -306,7 +314,7 @@ def process_gender_step(message):
 def ask_for_age(message):
     msg = bot.send_message(
         message.chat.id,
-        "Введите ваш возраст: (или нажмите 'Отменить регистрацию')",
+        "Введите ваш возраст:",
         reply_markup=get_cancel_keyboard()
     )
     user_repository.set_user_step(message.from_user.id, REG_STEPS['age'])
@@ -347,7 +355,7 @@ def ask_for_region(message):
 
         msg = bot.send_message(
             message.chat.id,
-            "Пожалуйста, выберите ваш регион: (или нажмите 'Отменить регистрацию')",
+            "Пожалуйста, выберите ваш регион:",
             reply_markup=keyboard
         )
         user_repository.set_user_step(message.from_user.id, REG_STEPS['region'])
@@ -406,7 +414,7 @@ def ask_for_interests(message):
     try:
         msg = bot.send_message(
             message.chat.id,
-            "Выберите ваши интересы (можно несколько, отправляйте по одному): (или нажмите 'Отменить регистрацию')",
+            "Выберите ваши интересы:",
             reply_markup=get_interests_keyboard()
         )
         user_repository.set_user_step(message.from_user.id, REG_STEPS['interests'])
@@ -477,8 +485,8 @@ def process_interests_step(message):
 def ask_for_photo(message):
     msg = bot.send_message(
         message.chat.id,
-        "Пожалуйста, отправьте ваше фото: (или нажмите 'Отменить регистрацию')",
-        reply_markup=get_cancel_keyboard()
+        "Пожалуйста, отправьте ваше фото:",
+        reply_markup=get_skip_keyboard()
     )
     user_repository.set_user_step(message.from_user.id, REG_STEPS['photo'])
     bot.register_next_step_handler(msg, process_photo_step)
@@ -489,13 +497,17 @@ def process_photo_step(message):
         if check_cancel(message):
             return
 
+        if message.text and message.text.lower() == "пропустить":
+            ask_for_location(message)
+            return
+
         if message.content_type == 'photo':
             temp_data = temp_data_repository.get_temp_data(message.from_user.id)
             temp_data['photo'] = message.photo[-1].file_id
             temp_data_repository.save_temp_data(message.from_user.id, temp_data)
             ask_for_location(message)
         else:
-            bot.send_message(message.chat.id, "Пожалуйста, отправьте фото.")
+            bot.send_message(message.chat.id, "Пожалуйста, отправьте фото или нажмите 'Пропустить'.")
             ask_for_photo(message)
     except Exception as e:
         logger.error(f"Ошибка в process_photo_step: {e}")
@@ -505,8 +517,8 @@ def process_photo_step(message):
 def ask_for_location(message):
     msg = bot.send_message(
         message.chat.id,
-        "Укажите Ваше местоположение: (или нажмите 'Отменить регистрацию')",
-        reply_markup=get_cancel_keyboard()
+        "Укажите Ваше местоположение:",
+        reply_markup=get_skip_keyboard()
     )
     user_repository.set_user_step(message.from_user.id, REG_STEPS['location'])
     bot.register_next_step_handler(msg, process_location_step)
@@ -517,15 +529,16 @@ def process_location_step(message):
         if check_cancel(message):
             return
 
+        if message.text and message.text.lower() == "пропустить":
+            complete_registration(message)
+            return
+
         if message.content_type == 'location':
             temp_data = temp_data_repository.get_temp_data(message.from_user.id)
             temp_data['geolocation'] = f"{message.location.latitude},{message.location.longitude}"
             temp_data_repository.save_temp_data(message.from_user.id, temp_data)
 
-            complete_registration(message)
-        else:
-            bot.send_message(message.chat.id, "Пожалуйста, отправьте вашу локацию.")
-            ask_for_location(message)
+        complete_registration(message)
     except Exception as e:
         logger.error(f"Ошибка в process_location_step: {e}")
         bot.reply_to(message, "Произошла ошибка. Пожалуйста, попробуйте позже.")
@@ -546,8 +559,8 @@ def complete_registration(message):
             region_id=temp_data.get('region_id'),
             age=temp_data.get('age'),
             gender=temp_data.get('gender'),
-            photo=temp_data.get('photo'),
-            geolocation=temp_data.get('geolocation'),
+            photo=temp_data.get('photo'),  # Может быть None, если пропущено
+            geolocation=temp_data.get('geolocation'),  # Может быть None, если пропущено
             is_admin=temp_data.get('is_admin', False),
             step=0
         )
@@ -565,15 +578,6 @@ def complete_registration(message):
                 except Exception as e:
                     logger.error(f"Error adding interest {interest_id}: {e}")
 
-        with storage.connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT interest_id FROM user_interests WHERE user_id = %s",
-                (user_id,)
-            )
-            saved = cursor.fetchall()
-            logger.info(f"Проверка БД: сохранено {len(saved)} интересов: {saved}")
-
         temp_data_repository.clear_temp_data(message.from_user.id)
 
         bot.send_message(
@@ -587,7 +591,6 @@ def complete_registration(message):
             message,
             "Ошибка при завершении регистрации. Пожалуйста, попробуйте снова."
         )
-
 
 if __name__ == '__main__':
     try:
